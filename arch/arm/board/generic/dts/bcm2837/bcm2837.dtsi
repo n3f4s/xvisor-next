@@ -67,6 +67,12 @@
 		#size-cells = <1>;
 		compatible = "simple-bus";
 
+		gpio { /* LEDs */
+			compatible = "bgpio,generic";
+			reg-names = "dat";
+			reg = <0x1c010008 0x4>;
+		};
+
 		timer {
 			compatible = "brcm,bcm2835-system-timer";
 			reg = <0x3f003000 0x1000>;

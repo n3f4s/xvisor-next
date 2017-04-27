@@ -26,3 +26,4 @@ drivers-objs-$(CONFIG_GPIOLIB)+= gpio/gpiolib-legacy.o
 drivers-objs-$(CONFIG_GPIO_GENERIC)+= gpio/gpio-mmio.o
 drivers-objs-$(CONFIG_OF_GPIO)+= gpio/gpiolib-of.o
 drivers-objs-$(CONFIG_GPIO_MXC)+= gpio/gpio-mxc.o
+drivers-objs-$(CONFIG_GPIO_BCM)+= gpio/gpio-bcm.o
