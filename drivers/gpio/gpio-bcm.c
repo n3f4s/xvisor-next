@@ -43,6 +43,14 @@
 #include <linux/module.h>
 #include <asm-generic/bug.h>
 
+#define DEBUG
+
+#ifdef DEBUG
+#define DPRINTF(fmt, ...)  vmm_printf("\t[%s] " fmt, __PRETTY_FUNCTION__, ##__VA_ARGS__)
+#else
+#define DPRINTF(fmt, ...)
+#endif
+
 #define NOT_IMPLEMENTED\
     do{\
         vmm_printf("/!\\/!\\/!\\/!\\/!\\ ERROR : %s Not Implemented /!\\/!\\/!\\/!\\/!\\\n", __PRETTY_FUNCTION__);\
@@ -633,14 +641,14 @@ out_regmap:
 }
 
 static struct vmm_driver mxc_gpio_driver = {
-	.name		= "gpio-mxc",
+	.name		= "gpio-bcm",
 	.match_table	= mxc_gpio_dt_ids,
 	.probe		= mxc_gpio_probe,
 };
 
 static int __init gpio_mxc_init(void)
 {
-        vmm_printf("\t[%s] RPI3 GPIO driver\n", __PRETTY_FUNCTION__);
+        DPRINTF("RPI3 GPIO driver\n");
 	return vmm_devdrv_register_driver(&mxc_gpio_driver);
 }
 #if 0
