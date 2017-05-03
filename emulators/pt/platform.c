@@ -25,10 +25,12 @@
  */
 
 #include <vmm_error.h>
+#include <vmm_limits.h>
 #include <vmm_heap.h>
 #include <vmm_stdio.h>
 #include <vmm_devtree.h>
 #include <vmm_devdrv.h>
+#include <vmm_cpumask.h>
 #include <vmm_platform.h>
 #include <vmm_host_irq.h>
 #include <vmm_iommu.h>
@@ -48,7 +50,8 @@ struct platform_pt_state {
 	struct vmm_guest *guest;
 	u32 irq_count;
 	u32 *host_irqs;
-	u32 *host_type_irqs;
+	u32 *host_irqs_type;
+	u32 *host_irqs_cpu;
 	u32 *guest_irqs;
 	struct vmm_device *dev;
 	struct vmm_iommu_domain *dom;
@@ -147,18 +150,29 @@ static int platform_pt_fault(struct vmm_iommu_domain *dom,
 	return 0;
 }
 
-static void platform_pt_iter(struct vmm_guest *guest,
-			     struct vmm_region *reg,
-			     void *priv)
+static void platform_pt_mapping_iter(struct vmm_guest *guest,
+				     struct vmm_region *reg,
+				     physical_addr_t guest_phys,
+				     physical_addr_t host_phys,
+				     physical_size_t size,
+				     void *priv)
 {
 	struct platform_pt_state *s = priv;
 
-	/* Map entire guest region */
-	vmm_iommu_map(s->dom,
-		      VMM_REGION_GPHYS_START(reg),
-		      VMM_REGION_HPHYS_START(reg),
-		      VMM_REGION_GPHYS_END(reg) - VMM_REGION_GPHYS_START(reg),
+	/* Create IOMMU mapping for given guest region mapping */
+	vmm_iommu_map(s->dom, guest_phys, host_phys, size,
 		      VMM_IOMMU_READ|VMM_IOMMU_WRITE);
+}
+
+static void platform_pt_region_iter(struct vmm_guest *guest,
+				    struct vmm_region *reg,
+				    void *priv)
+{
+	struct platform_pt_state *s = priv;
+
+	/* Iterate over each mapping of guest region */
+	vmm_guest_iterate_mapping(guest, reg,
+				  platform_pt_mapping_iter, s);
 }
 
 static int platform_pt_guest_aspace_notification(
@@ -194,9 +208,8 @@ static int platform_pt_guest_aspace_notification(
 		vmm_guest_iterate_region(s->guest,
 					 VMM_REGION_REAL |
 					 VMM_REGION_MEMORY |
-					 VMM_REGION_ISRAM |
-					 VMM_REGION_ISHOSTRAM,
-					 platform_pt_iter, s);
+					 VMM_REGION_ISRAM,
+					 platform_pt_region_iter, s);
 	}
 
 	return NOTIFY_OK;
@@ -240,10 +253,10 @@ static int platform_pt_probe(struct vmm_guest *guest,
 
 	s->guest = guest;
 	s->irq_count = vmm_devtree_attrlen(edev->node, "host-interrupts");
-	s->irq_count = s->irq_count / (sizeof(u32) * 2);
+	s->irq_count = s->irq_count / (sizeof(u32) * 3);
 	s->guest_irqs = NULL;
 	s->host_irqs = NULL;
-	s->host_type_irqs = NULL;
+	s->host_irqs_type = NULL;
 
 	if (s->irq_count) {
 		s->host_irqs = vmm_zalloc(sizeof(u32) * s->irq_count);
@@ -252,30 +265,43 @@ static int platform_pt_probe(struct vmm_guest *guest,
 			goto platform_pt_probe_freestate_fail;
 		}
 
-		s->host_type_irqs = vmm_zalloc(sizeof(u32) * s->irq_count);
-		if (!s->host_type_irqs) {
+		s->host_irqs_type = vmm_zalloc(sizeof(u32) * s->irq_count);
+		if (!s->host_irqs_type) {
 			rc = VMM_ENOMEM;
 			goto platform_pt_probe_freehirqs_fail;
+		}
+
+		s->host_irqs_cpu = vmm_zalloc(sizeof(u32) * s->irq_count);
+		if (!s->host_irqs_cpu) {
+			rc = VMM_ENOMEM;
+			goto platform_pt_probe_freehirqst_fail;
 		}
 
 		s->guest_irqs = vmm_zalloc(sizeof(u32) * s->irq_count);
 		if (!s->guest_irqs) {
 			rc = VMM_ENOMEM;
-			goto platform_pt_probe_freehtirqs_fail;
+			goto platform_pt_probe_freehirqsc_fail;
 		}
 	}
 
 	for (i = 0; i < s->irq_count; i++) {
 		rc = vmm_devtree_read_u32_atindex(edev->node,
 						  "host-interrupts",
-						  &s->host_irqs[i], i*2);
+						  &s->host_irqs[i], i*3);
 		if (rc) {
 			goto platform_pt_probe_cleanupirqs_fail;
 		}
 
 		rc = vmm_devtree_read_u32_atindex(edev->node,
 					"host-interrupts",
-					&s->host_type_irqs[i], i*2 + 1);
+					&s->host_irqs_type[i], i*3 + 1);
+		if (rc) {
+			goto platform_pt_probe_cleanupirqs_fail;
+		}
+
+		rc = vmm_devtree_read_u32_atindex(edev->node,
+					"host-interrupts",
+					&s->host_irqs_cpu[i], i*3 + 2);
 		if (rc) {
 			goto platform_pt_probe_cleanupirqs_fail;
 		}
@@ -288,8 +314,23 @@ static int platform_pt_probe(struct vmm_guest *guest,
 		}
 
 		rc = vmm_host_irq_set_type(s->host_irqs[i],
-					   s->host_type_irqs[i]);
+					   s->host_irqs_type[i]);
 		if (rc) {
+			goto platform_pt_probe_cleanupirqs_fail;
+		}
+
+		if ((s->host_irqs_cpu[i] != U32_MAX) &&
+		    (s->host_irqs_cpu[i] < vmm_num_online_cpus())) {
+			rc = vmm_host_irq_set_affinity(s->host_irqs[i],
+				vmm_cpumask_of(s->host_irqs_cpu[i]), TRUE);
+			if (rc) {
+				goto platform_pt_probe_cleanupirqs_fail;
+			}
+		} else if ((s->host_irqs_cpu[i] != U32_MAX) &&
+			   (s->host_irqs_cpu[i] >= vmm_num_online_cpus())) {
+			vmm_printf("%s: %s invalid cpu=%d\n",
+				   __func__, s->name, s->host_irqs_cpu[i]);
+			rc = VMM_EINVALID;
 			goto platform_pt_probe_cleanupirqs_fail;
 		}
 
@@ -377,9 +418,13 @@ platform_pt_probe_cleanupirqs_fail:
 	if (s->guest_irqs) {
 		vmm_free(s->guest_irqs);
 	}
-platform_pt_probe_freehtirqs_fail:
-	if (s->host_type_irqs) {
-		vmm_free(s->host_type_irqs);
+platform_pt_probe_freehirqsc_fail:
+	if (s->host_irqs_cpu) {
+		vmm_free(s->host_irqs_cpu);
+	}
+platform_pt_probe_freehirqst_fail:
+	if (s->host_irqs_type) {
+		vmm_free(s->host_irqs_type);
 	}
 platform_pt_probe_freehirqs_fail:
 	if (s->host_irqs) {
@@ -416,8 +461,11 @@ static int platform_pt_remove(struct vmm_emudev *edev)
 	if (s->guest_irqs) {
 		vmm_free(s->guest_irqs);
 	}
-	if (s->host_type_irqs) {
-		vmm_free(s->host_type_irqs);
+	if (s->host_irqs_cpu) {
+		vmm_free(s->host_irqs_cpu);
+	}
+	if (s->host_irqs_type) {
+		vmm_free(s->host_irqs_type);
 	}
 	if (s->host_irqs) {
 		vmm_free(s->host_irqs);

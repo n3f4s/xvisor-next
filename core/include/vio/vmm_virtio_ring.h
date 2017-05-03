@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * @file virtio_ring.h
+ * @file vmm_virtio_ring.h
  * @author Pranav Sawargaonkar (pranav.sawargaonkar@gmail.com)
  * @brief VirtIO Ring Interface
  *
@@ -28,29 +28,30 @@
  * The original code is licensed under the BSD.
  */
 
-#ifndef _VIRTIO_RING_H__
-#define _VIRTIO_RING_H__
+#ifndef __VMM_VIRTIO_RING_H__
+#define __VMM_VIRTIO_RING_H__
 
 #include <vmm_types.h>
+#include <vmm_macros.h>
 
 /* This marks a buffer as continuing via the next field. */
-#define VRING_DESC_F_NEXT	1
+#define VMM_VRING_DESC_F_NEXT		1
 /* This marks a buffer as write-only (otherwise read-only). */
-#define VRING_DESC_F_WRITE	2
+#define VMM_VRING_DESC_F_WRITE		2
 /* This means the buffer contains a list of buffer descriptors. */
-#define VRING_DESC_F_INDIRECT	4
+#define VMM_VRING_DESC_F_INDIRECT	4
 
 /* The Host uses this in used->flags to advise the Guest: don't kick me when
  * you add a buffer.  It's unreliable, so it's simply an optimization.  Guest
  * will still kick if it's out of buffers. */
-#define VRING_USED_F_NO_NOTIFY	1
+#define VMM_VRING_USED_F_NO_NOTIFY	1
 /* The Guest uses this in avail->flags to advise the Host: don't interrupt me
  * when you consume a buffer.  It's unreliable, so it's simply an
  * optimization.  */
-#define VRING_AVAIL_F_NO_INTERRUPT	1
+#define VMM_VRING_AVAIL_F_NO_INTERRUPT	1
 
 /* We support indirect buffer descriptors */
-#define VIRTIO_RING_F_INDIRECT_DESC	28
+#define VMM_VIRTIO_RING_F_INDIRECT_DESC	28
 
 /* The Guest publishes the used index for which it expects an interrupt
  * at the end of the avail ring. Host should ignore the avail->flags field.
@@ -58,10 +59,10 @@
  /* The Host publishes the avail index for which it expects a kick
   * at the end of the used ring. Guest should ignore the used->flags field.
   */
-#define VIRTIO_RING_F_EVENT_IDX		29
+#define VMM_VIRTIO_RING_F_EVENT_IDX	29
 
 /* Virtio ring descriptors: 16 bytes.  These can chain together via "next". */
-struct vring_desc {
+struct vmm_vring_desc {
 	/* Address (guest-physical). */
 	u64 addr;
 	/* Length. */
@@ -72,55 +73,43 @@ struct vring_desc {
 	u16 next;
 };
 
-struct vring_avail {
+struct vmm_vring_avail {
 	u16 flags;
 	u16 idx;
 	u16 ring[];
 };
 
 /* u32 is used here for ids for padding reasons. */
-struct vring_used_elem {
+struct vmm_vring_used_elem {
 	/* Index of start of used descriptor chain. */
 	u32 id;
 	/* Total length of the descriptor chain which was used (written to) */
 	u32 len;
 };
 
-struct vring_used {
+struct vmm_vring_used {
 	u16 flags;
 	u16 idx;
-	struct vring_used_elem ring[];
+	struct vmm_vring_used_elem ring[];
 };
 
-struct vring {
+struct vmm_vring {
 	unsigned int num;
 
-	struct vring_desc *desc;
+	struct vmm_vring_desc *desc;
+	physical_addr_t desc_pa;
 
-	struct vring_avail *avail;
+	struct vmm_vring_avail *avail;
+	physical_addr_t avail_pa;
 
-	struct vring_used *used;
+	struct vmm_vring_used *used;
+	physical_addr_t used_pa;
 };
-
-struct virtio_iovec {
-	/* Address (guest-physical). */
-	u64 addr;
-	/* Length. */
-	u32 len;
-	/* The flags as indicated above. */
-	u16 flags;
-};
-
-/* We publish the used event index at the end of the available ring, and vice
- * versa. They are at the end for backwards compatibility. */
-#define vring_used_event(vr) ((vr)->avail->ring[(vr)->num])
-#define vring_avail_event(vr) (*(u16 *)&(vr)->used->ring[(vr)->num])
 
 /* The standard layout for the ring is a continuous chunk of memory which looks
  * like this.  We assume num is a power of 2.
  *
- * struct vring
- * {
+ * struct vmm_vring {
  *	// The actual descriptors (16 bytes each)
  *	struct vring_desc desc[num];
  *
@@ -135,31 +124,42 @@ struct virtio_iovec {
  *	// A ring of used descriptor heads with free-running index.
  *	__u16 used_flags;
  *	__u16 used_idx;
- *	struct vring_used_elem used[num];
+ *	struct vmm_vring_used_elem used[num];
  * };
  */
-static inline void vring_init(struct vring *vr, unsigned int num, void *p,
-			      unsigned long align)
+static inline void vmm_vring_init(struct vmm_vring *vr,
+				  unsigned int num,
+				  void *base,
+				  physical_addr_t base_pa,
+				  unsigned long align)
 {
 	vr->num = num;
-	vr->desc = p;
-	vr->avail = p + num*sizeof(struct vring_desc);
-	vr->used = (void *)(((unsigned long)&vr->avail->ring[num] + align-1)
-			    & ~(align - 1));
 
+	vr->desc = base;
+	vr->desc_pa = base_pa;
+
+	vr->avail = base + num * sizeof(struct vmm_vring_desc);
+	vr->avail_pa = base_pa + num * sizeof(struct vmm_vring_desc);
+
+	vr->used = (void *)&vr->avail->ring[num];
+	vr->used =
+	(void *)(((unsigned long)vr->used + align - 1) & ~(align - 1));
+	vr->used_pa = vr->avail_pa +
+		      offsetof(struct vmm_vring_avail, ring[num]);
+	vr->used_pa = (vr->used_pa + align - 1) & ~(align - 1);
 }
 
-static inline unsigned vring_size(unsigned int num, unsigned long align)
+static inline unsigned vmm_vring_size(unsigned int num, unsigned long align)
 {
-	return ((sizeof(struct vring_desc) * num + sizeof(u16) * (2 + num)
-		 + align - 1) & ~(align - 1))
-		+ sizeof(u16) * 2 + sizeof(struct vring_used_elem) * num;
+	return ((sizeof(struct vmm_vring_desc) * num +
+		 sizeof(u16) * (2 + num) + align - 1) & ~(align - 1))
+		+ sizeof(u16) * 2 + sizeof(struct vmm_vring_used_elem) * num;
 }
 
 
-static inline int vring_need_event(u16 event_idx, u16 new_idx, u16 old)
+static inline int vmm_vring_need_event(u16 event_idx, u16 new_idx, u16 old)
 {
 	return (u16)(new_idx - event_idx - 1) < (u16)(new_idx - old);
 }
 
-#endif /* _VIRTIO_RING_H__*/
+#endif /* __VMM_VIRTIO_RING_H__ */

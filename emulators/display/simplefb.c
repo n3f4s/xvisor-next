@@ -90,7 +90,7 @@ static int simplefb_display_pixeldata(struct vmm_vdisplay *vdis,
 	}
 
 	gpa = s->fb_base;
-	gsz = (s->width * s->height) * s->stride;
+	gsz = s->height * s->stride;
 	rc = vmm_guest_physical_map(s->guest, gpa, gsz, &hpa, &hsz, &flags);
 	if (rc) {
 		return rc;
@@ -99,6 +99,10 @@ static int simplefb_display_pixeldata(struct vmm_vdisplay *vdis,
 	if (!(flags & VMM_REGION_REAL) ||
 	    !(flags & VMM_REGION_MEMORY) ||
 	    !(flags & VMM_REGION_ISRAM)) {
+		return VMM_EINVALID;
+	}
+
+	if (hsz < gsz) {
 		return VMM_EINVALID;
 	}
 

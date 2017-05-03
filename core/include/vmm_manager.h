@@ -43,47 +43,61 @@ enum vmm_region_flags {
 	VMM_REGION_CACHEABLE=0x00000020,
 	VMM_REGION_BUFFERABLE=0x00000040,
 	VMM_REGION_READONLY=0x00000080,
-	VMM_REGION_ISHOSTRAM=0x00000100,
-	VMM_REGION_ISRAM=0x00000200,
-	VMM_REGION_ISROM=0x00000400,
-	VMM_REGION_ISDEVICE=0x00000800,
-	VMM_REGION_ISRESERVED=0x00001000,
-	VMM_REGION_ISALLOCED=0x00002000,
-	VMM_REGION_ISDYNAMIC=0x00004000,
+	VMM_REGION_ISRAM=0x00000100,
+	VMM_REGION_ISROM=0x00000200,
+	VMM_REGION_ISDEVICE=0x00000400,
+	VMM_REGION_ISRESERVED=0x00000800,
+	VMM_REGION_ISALLOCED=0x00001000,
+	VMM_REGION_ISDYNAMIC=0x00002000,
 };
 
 #define VMM_REGION_MANIFEST_MASK	(VMM_REGION_REAL | \
 					 VMM_REGION_VIRTUAL | \
 					 VMM_REGION_ALIAS)
 
+enum vmm_region_mapping_flags {
+	VMM_REGION_MAPPING_ISHOSTRAM=0x00000001,
+};
+
 struct vmm_region;
+struct vmm_region_mapping;
 struct vmm_guest_aspace;
 struct vmm_vcpu_irqs;
 struct vmm_vcpu;
 struct vmm_guest;
+
+struct vmm_region_mapping {
+	physical_addr_t hphys_addr;
+	u32 flags;
+};
 
 struct vmm_region {
 	struct rb_node head;
 	struct dlist phead;
 	struct vmm_devtree_node *node;
 	struct vmm_guest_aspace *aspace;
+	u32 flags;
 	physical_addr_t gphys_addr;
-	physical_addr_t hphys_addr;
+	physical_addr_t aphys_addr;
 	physical_size_t phys_size;
 	u32 align_order;
-	u32 flags;
+	u32 map_order;
+	u32 maps_count;
+	struct vmm_region_mapping *maps;
 	void *devemu_priv;
 	void *priv;
 };
 
+#define VMM_REGION_NAME(reg)		((reg)->node->name)
 #define VMM_REGION_GPHYS_START(reg)	((reg)->gphys_addr)
 #define VMM_REGION_GPHYS_END(reg)	((reg)->gphys_addr + (reg)->phys_size)
-#define VMM_REGION_HPHYS_START(reg)	((reg)->hphys_addr)
-#define VMM_REGION_HPHYS_END(reg)	((reg)->hphys_addr + (reg)->phys_size)
-#define VMM_REGION_GPHYS_TO_HPHYS(reg, gphys)	\
-			((reg)->hphys_addr + ((gphys) - (reg)->gphys_addr))
-#define VMM_REGION_HPHYS_TO_GPHYS(reg, hphys)	\
-			((reg)->gphys_addr + ((hphys) - (reg)->hphys_addr))
+#define VMM_REGION_PHYS_SIZE(reg)	((reg)->phys_size)
+#define VMM_REGION_GPHYS_TO_APHYS(reg, gphys)	\
+			((reg)->aphys_addr + ((gphys) - (reg)->gphys_addr))
+#define VMM_REGION_FLAGS(reg)		((reg)->flags)
+#define VMM_REGION_ALIGN_ORDER(reg)	((reg)->align_order)
+#define VMM_REGION_MAP_ORDER(reg)	((reg)->map_order)
+#define VMM_REGION_MAPS_COUNT(reg)	((reg)->maps_count)
 
 struct vmm_guest_aspace {
 	struct vmm_devtree_node *node;

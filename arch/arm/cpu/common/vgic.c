@@ -32,6 +32,7 @@
 #include <vmm_host_irq.h>
 #include <vmm_scheduler.h>
 #include <vmm_vcpu_irq.h>
+#include <vmm_guest_aspace.h>
 #include <vmm_devemu.h>
 #include <vmm_modules.h>
 #include <arch_regs.h>
@@ -296,8 +297,8 @@ static bool __vgic_queue_irq(struct vgic_guest_state *s,
 		}
 	}
 	if (lr >= vgich.params.lr_cnt) {
-		vmm_printf("%s: LR overflow IRQ=%d SRC_ID=%d VCPU=%s\n",
-			   __func__, irq, src_id, vs->vcpu->name);
+		DPRINTF("%s: LR overflow IRQ=%d SRC_ID=%d VCPU=%s\n",
+			__func__, irq, src_id, vs->vcpu->name);
 		return FALSE;
 	}
 
@@ -558,7 +559,7 @@ static void __vgic_irq_handle(struct vgic_guest_state *s, u32 irq, int cpu,
 		/* In case of PPIs and SGIs */
 		cm = target = (1 << cpu);
 	} else {
-		/* In case of SGIs */
+		/* In case of SPIs */
 		cm = VGIC_ALL_CPU_MASK(s);
 		target = VGIC_TARGET(s, irq);
 		for (cpu = 0; cpu < VGIC_NUM_CPU(s); cpu++) {
@@ -1497,8 +1498,6 @@ static int vgic_cpu_emulator_probe(struct vmm_guest *guest,
 				   struct vmm_emudev *edev,
 				   const struct vmm_devtree_nodeid *eid)
 {
-	int rc;
-
 	if (!vgich.avail) {
 		return VMM_ENODEV;
 	}
@@ -1509,18 +1508,9 @@ static int vgic_cpu_emulator_probe(struct vmm_guest *guest,
 		return VMM_ENODEV;
 	}
 
-	rc = vmm_devtree_setattr(edev->node,
-				 VMM_DEVTREE_HOST_PHYS_ATTR_NAME,
-				 &vgich.params.vcpu_pa,
-				 VMM_DEVTREE_ATTRTYPE_PHYSADDR,
-				 sizeof(vgich.params.vcpu_pa), FALSE);
-	if (rc) {
-		return rc;
-	}
-
-	edev->reg->hphys_addr = vgich.params.vcpu_pa;
-
-	return VMM_OK;
+	return vmm_guest_overwrite_real_device_mapping(guest, edev->reg,
+					VMM_REGION_GPHYS_START(edev->reg),
+					vgich.params.vcpu_pa);
 }
 
 static int vgic_cpu_emulator_remove(struct vmm_emudev *edev)
