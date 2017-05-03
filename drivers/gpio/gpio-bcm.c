@@ -173,13 +173,7 @@ static struct platform_device_id mxc_gpio_devtype[] = {
 };
 
 static const struct vmm_devtree_nodeid mxc_gpio_dt_ids[] = {
-	{ .compatible = "fsl,imx1-gpio", .data = &mxc_gpio_devtype[IMX1_GPIO], },
-	{ .compatible = "fsl,imx21-gpio", .data = &mxc_gpio_devtype[IMX21_GPIO], },
-	{ .compatible = "fsl,imx31-gpio", .data = &mxc_gpio_devtype[IMX31_GPIO], },
-	{ .compatible = "fsl,imx35-gpio", .data = &mxc_gpio_devtype[IMX35_GPIO], },
-	{ .compatible = "fsl,bcm2836", .data = &mxc_gpio_devtype[IMX35_GPIO], },
-	{ .compatible = "brcm,bcm2836", .data = &mxc_gpio_devtype[IMX35_GPIO], },
-	{ .compatible = "bgpio,generic", .data = &mxc_gpio_devtype[IMX35_GPIO], },
+	{ .compatible = "brcm,bcm2835-gpio", .data = &mxc_gpio_devtype[IMX35_GPIO], },
 	{ /* sentinel */ }
 };
 
