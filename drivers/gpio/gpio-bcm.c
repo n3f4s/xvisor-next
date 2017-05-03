@@ -53,7 +53,7 @@
 
 #define NOT_IMPLEMENTED\
     do{\
-        vmm_printf("/!\\/!\\/!\\/!\\/!\\ ERROR : %s Not Implemented /!\\/!\\/!\\/!\\/!\\\n", __PRETTY_FUNCTION__);\
+        vmm_printf("\t\t\t/!\\/!\\/!\\/!\\/!\\ ERROR : %s Not Implemented /!\\/!\\/!\\/!\\/!\\\n", __PRETTY_FUNCTION__);\
         BUG();\
     } while(false)
 
@@ -519,7 +519,11 @@ static int mxc_gpio_to_irq(struct gpio_chip *gc, unsigned offset)
 static int mxc_gpio_probe(struct vmm_device *dev,
 			  const struct vmm_devtree_nodeid *devid)
 {
-        NOT_IMPLEMENTED;
+        /*NOT_IMPLEMENTED;*/
+        DPRINTF("dev->name = %s\n", dev->name);
+        DPRINTF("dev->type->name = %s\n", dev->type ? dev->type->name : "None");
+        DPRINTF("dev->driver->name = %s\n", dev->driver ? dev->driver->name : "None");
+        /*dump_stacktrace();*/
 	struct device_node *np = dev->of_node;
 	struct mxc_gpio_port *port;
 	int err = VMM_OK;
