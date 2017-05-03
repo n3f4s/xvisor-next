@@ -531,14 +531,16 @@ static int mxc_gpio_probe(struct vmm_device *dev,
 	char *name = NULL;
 	char *irq_name = NULL;
 
+#if 0
 	mxc_gpio_get_hw(devid);
+#endif
 
 	port = devm_kzalloc(dev, sizeof(*port), GFP_KERNEL);
 	if (!port)
 		return -ENOMEM;
 
 	err = vmm_devtree_request_regmap(np, (virtual_addr_t *)&port->base, 0,
-					 "MXC GPIO");
+					 "BCM GPIO");
 	if (VMM_OK != err) {
 		dev_err(dev, "fail to map registers from the device tree\n");
 		goto out_regmap;
@@ -547,18 +549,20 @@ static int mxc_gpio_probe(struct vmm_device *dev,
 	port->irq_high = vmm_devtree_irq_parse_map(np, 1);
 	port->irq = vmm_devtree_irq_parse_map(np, 0);
 	if (!port->irq) {
+                DPRINTF("port->irq = %d, port->irq_high = %d\n", port->irq, port->irq_high);
 		err = VMM_ENODEV;
 		goto out_irq_get;
 	}
 
 	name = vmm_malloc(PORT_NAME_LEN);
 	port_num = vmm_devtree_alias_get_id(dev->of_node, "gpio");
-	snprintf(name, PORT_NAME_LEN, "gpio_mxc%d", port_num);
+	snprintf(name, PORT_NAME_LEN, "gpio_bcm%d", port_num);
 
 	/* disable the interrupt and clear the status */
 	writel(0, port->base + GPIO_IMR);
 	writel(~0, port->base + GPIO_ISR);
 
+#if 0
 	if (mxc_gpio_hwtype == IMX21_GPIO) {
 		irq_name = vmm_malloc(PORT_NAME_LEN);
 		strncpy(irq_name, name, PORT_NAME_LEN);
@@ -599,29 +603,36 @@ static int mxc_gpio_probe(struct vmm_device *dev,
 				goto out_irq_reg_high;
 		}
 	}
-
+#endif
 	err = bgpio_init(&port->gc, dev, 4,
 			 port->base + GPIO_PSR,
 			 port->base + GPIO_DR, NULL,
 			 port->base + GPIO_GDIR, NULL, 0);
-	if (err)
-		goto out_bgpio;
+	if (err) {
+            DPRINTF("bgpio_init returns %d", err);
+            goto out_bgpio;
+        }
 
 	port->gc.to_irq = mxc_gpio_to_irq;
 	port->gc.base = (port_num - 1) * 32;
 
 	err = gpiochip_add(&port->gc);
-	if (err)
-		goto out_bgpio;
+	if (err) {
+            DPRINTF("gpiochip_add returns %d", err);
+            goto out_bgpio;
+        }
 
 	/* gpio-mxc can be a generic irq chip */
 	err = mxc_gpio_init_gc(port, name, 32, dev);
-	if (err)
-		goto out_gpiochip_remove;
+	if (err) {
+            DPRINTF("gpiochip_add returns %d", err);
+            goto out_gpiochip_remove;
+        }
 
 	list_add_tail(&port->node, &mxc_gpio_ports);
 	dev_info(dev, "%s registered\n", name);
 
+        DPRINTF(" return value : %d", err);
 	return err;
 
 #if 0
