@@ -146,7 +146,9 @@ struct gpio_chip {
 	struct irq_chip		*irqchip;
 	struct irq_domain	*irqdomain;
 	unsigned int		irq_base;
-	irq_flow_handler_t	irq_handler;
+#if 0
+        irq_flow_handler_t	irq_handler;
+#endif
 	unsigned int		irq_default_type;
 #endif
 
@@ -210,6 +212,7 @@ int bgpio_init(struct gpio_chip *gc, struct device *dev,
 
 #ifdef CONFIG_GPIOLIB_IRQCHIP
 
+#if 0
 void gpiochip_set_chained_irqchip(struct gpio_chip *gpiochip,
 		struct irq_chip *irqchip,
 		int parent_irq,
@@ -220,6 +223,7 @@ int gpiochip_irqchip_add(struct gpio_chip *gpiochip,
 		unsigned int first_irq,
 		irq_flow_handler_t handler,
 		unsigned int type);
+#endif
 
 #endif /* CONFIG_GPIOLIB_IRQCHIP */
 

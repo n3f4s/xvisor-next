@@ -218,9 +218,14 @@ static void pinctrl_free_pindescs(struct pinctrl_dev *pctldev,
 			radix_tree_delete(&pctldev->pin_desc_tree,
 					  pins[i].number);
 			if (pindesc->dynamic_name)
-				kfree((void *)pindesc->name);
+                                kfree((void *)pindesc->name);
+                        kfree(pindesc);
 		}
-		kfree(pindesc);
+                // XXX TODO FIXME is it a bug ?
+                // if kfree(0) = error
+                // then since pindesc can be null, kfree should be in the if
+                // else kfree(0) crash and kfree is bugged
+		/*kfree(pindesc);*/
 	}
 }
 
