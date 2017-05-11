@@ -22,7 +22,7 @@
 #include <linux/irqdesc.h>
 #endif
 
-/* Ugly hack
+/* FIXME Ugly hack
  * Adding CONFIG_GPIOLIB_IRQCHIP=y in the config file changed nothing
  */
 #ifndef CONFIG_GPIOLIB_IRQCHIP
@@ -70,6 +70,9 @@
 #else
 #define DPRINTF(fmt, ...)
 #endif
+
+/* Required for some functions, avoid modifying those functions */
+#define gpiochip_get_data(chip) container_of(chip, struct bcm2835_pinctrl, gpio_chip);
 
 #define NOT_IMPLEMENTED\
     do{\
@@ -385,19 +388,16 @@ static int bcm2835_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 
 static int bcm2835_gpio_get(struct gpio_chip *chip, unsigned offset)
 {
-    NOT_IMPLEMENTED;
-#if 0
 	struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);
 
 	return bcm2835_gpio_get_bit(pc, GPLEV0, offset);
-#endif
 }
 
 static int bcm2835_gpio_get_direction(struct gpio_chip *chip, unsigned int offset)
 {
-    NOT_IMPLEMENTED;
-#if 0
-	struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);
+	/*struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);*/
+	struct bcm2835_pinctrl *pc =
+			container_of(chip, struct bcm2835_pinctrl, gpio_chip);
 	enum bcm2835_fsel fsel = bcm2835_pinctrl_fsel_get(pc, offset);
 
 	/* Alternative function doesn't clearly provide a direction */
@@ -405,23 +405,19 @@ static int bcm2835_gpio_get_direction(struct gpio_chip *chip, unsigned int offse
 		return -EINVAL;
 
 	return (fsel == BCM2835_FSEL_GPIO_IN);
-#endif
-        return 0;
 }
 
 static void bcm2835_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 {
-    NOT_IMPLEMENTED;
-#if 0
 	struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);
 
 	bcm2835_gpio_set_bit(pc, value ? GPSET0 : GPCLR0, offset);
-#endif
 }
 
 static int bcm2835_gpio_direction_output(struct gpio_chip *chip,
 		unsigned offset, int value)
 {
+        DPRINTF("gpio %s at offset %u : val=%d\n", chip->label, offset, value);
 	bcm2835_gpio_set(chip, offset, value);
 	return pinctrl_gpio_direction_output(chip->base + offset);
 }
@@ -1255,15 +1251,15 @@ static int bcm2835_gpio_probe(struct vmm_device *dev,
 	}
         DPRINTF("Calling bgpio_init\n");
         // FIXME check values & registers
-        err = bgpio_init(&pc->gpio_chip,     //gpio_chip
-                         dev,                //device
-                         4,                  //size
-                         pc->base + GPLEV0,  //dat register
-                         pc->base + GPSET0,  //set register
-                         pc->base + GPCLR0,  //clr register
-                         pc->base + GPFSEL0, //dirout register
-                         NULL,               //dirin register
-                         1);                 //flags
+        /*err = bgpio_init(&pc->gpio_chip,     //gpio_chip*/
+                         /*dev,                //device*/
+                         /*4,                  //size*/
+                         /*pc->base + GPLEV0,  //dat register*/
+                         /*pc->base + GPSET0,  //set register*/
+                         /*pc->base + GPCLR0,  //clr register*/
+                         /*pc->base + GPFSEL0, //dirout register*/
+                         /*NULL,               //dirin register*/
+                         /*1);                 //flags*/
         if (err) {
             DPRINTF("bgpio_init exit with error %d\n", err);
             return err;
