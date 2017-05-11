@@ -22,14 +22,6 @@
 #include <linux/irqdesc.h>
 #endif
 
-/* FIXME Ugly hack
- * Adding CONFIG_GPIOLIB_IRQCHIP=y in the config file changed nothing
- */
-#ifndef CONFIG_GPIOLIB_IRQCHIP
-#warning "CONFIG_GPIOLIB_IRQCHIP not defined"
-#define CONFIG_GPIOLIB_IRQCHIP
-#endif
-
 #include <linux/bitmap.h>
 #include <linux/bug.h>
 #include <linux/delay.h>
@@ -56,11 +48,6 @@
 #include <asm-generic/bug.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <vmm_host_irqdomain.h>
-
-// Required until config file is fixed
-#ifndef CONFIG_GPIOLIB_IRQCHIP
-#error "CONFIG_GPIOLIB_IRQCHIP not defined"
-#endif
 
 // undef DEBUG to suppress debug output
 #define DEBUG
@@ -395,7 +382,6 @@ static int bcm2835_gpio_get(struct gpio_chip *chip, unsigned offset)
 
 static int bcm2835_gpio_get_direction(struct gpio_chip *chip, unsigned int offset)
 {
-	/*struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);*/
 	struct bcm2835_pinctrl *pc =
 			container_of(chip, struct bcm2835_pinctrl, gpio_chip);
 	enum bcm2835_fsel fsel = bcm2835_pinctrl_fsel_get(pc, offset);
@@ -470,7 +456,7 @@ static struct gpio_chip bcm2835_gpio_chip = {
 static int bcm2835_gpio_irq_handle_bank(struct bcm2835_pinctrl *pc,
 					unsigned int bank, u32 mask)
 {
-    NOT_IMPLEMENTED; // FIXME link error : relocation error
+    NOT_IMPLEMENTED;
 #if 0
 	unsigned long events;
 	unsigned offset;
@@ -1111,7 +1097,7 @@ static void bcm2835_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 	int			is_out;
 	int			is_irq;
 
-        /*DPRINTF("Dumping %d gpios for %s\n", chip->ngpio, chip->label);*/
+        DPRINTF("Dumping %d gpios for %s (%s)\n", chip->ngpio, chip->label, gdesc->label);
 	for (i = 0; i < chip->ngpio; i++, gpio++, gdesc++) {
 
                 /*DPRINTF("GPIO %d has flag REQUESTED\n", i);*/
@@ -1119,7 +1105,7 @@ static void bcm2835_dbg_show(struct seq_file *s, struct gpio_chip *chip)
 		gpiod_get_direction(gdesc);
 		is_out = test_bit(FLAG_IS_OUT, &gdesc->flags);
 		is_irq = test_bit(FLAG_USED_AS_IRQ, &gdesc->flags);
-		seq_printf(s, " gpio-%-3d (%-20s) %s %s %s irq_no=%i, flags=0x%lx",
+		seq_printf(s, " gpio-%-4d (%-20s) %s %-4s %s irq_no=%i, flags=0x%lx",
 			gpio, gdesc->label,
 			is_out ? "out" : "in ",
 			chip->get
@@ -1249,24 +1235,6 @@ static int bcm2835_gpio_probe(struct vmm_device *dev,
 			return err;
 		}
 	}
-        DPRINTF("Calling bgpio_init\n");
-        // FIXME check values & registers
-        /*err = bgpio_init(&pc->gpio_chip,     //gpio_chip*/
-                         /*dev,                //device*/
-                         /*4,                  //size*/
-                         /*pc->base + GPLEV0,  //dat register*/
-                         /*pc->base + GPSET0,  //set register*/
-                         /*pc->base + GPCLR0,  //clr register*/
-                         /*pc->base + GPFSEL0, //dirout register*/
-                         /*NULL,               //dirin register*/
-                         /*1);                 //flags*/
-        if (err) {
-            DPRINTF("bgpio_init exit with error %d\n", err);
-            return err;
-        }
-
-        // FIXME continue from there !
-        /*set_bit(0, pc->gpio_chip.desc->flags);*/
 	err = gpiochip_add(&pc->gpio_chip);
 	if (err) {
 		dev_err(dev, "could not add GPIO chip\n");
