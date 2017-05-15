@@ -62,12 +62,6 @@
 /* Required for some functions, avoid modifying those functions */
 #define gpiochip_get_data(chip) container_of(chip, struct bcm2835_pinctrl, gpio_chip);
 
-#define NOT_IMPLEMENTED\
-    do{\
-        vmm_printf("\t\t\t/!\\/!\\/!\\/!\\/!\\ ERROR : %s Not Implemented /!\\/!\\/!\\/!\\/!\\\n", __PRETTY_FUNCTION__);\
-        BUG();\
-    } while(0)
-
 #define MODULE_NAME "pinctrl-bcm2835"
 #define BCM2835_NUM_GPIOS 54
 #define BCM2835_NUM_BANKS 2
@@ -1018,8 +1012,7 @@ static int bcm2835_pmx_gpio_set_direction(struct pinctrl_dev *pctldev,
 static int bcm2835_pmx_enable(struct pinctrl_dev *pctldev, unsigned selector,
 			   unsigned group)
 {
-    NOT_IMPLEMENTED;
-	return 0;
+	return VMM_OK;
 }
 
 static const struct pinmux_ops bcm2835_pmx_ops = {
@@ -1295,21 +1288,21 @@ static const struct vmm_devtree_nodeid bcm2835_gpio_dt_ids[] = {
 	{ .compatible = "brcm,bcm2835-gpio", .data = NULL, },
 	{ /* sentinel */ }
 };
-static struct vmm_driver mxc_gpio_driver = {
+static struct vmm_driver bcm_gpio_driver = {
 	.name		= "gpio-bcm",
 	.match_table	= bcm2835_gpio_dt_ids,
 	.probe		= bcm2835_gpio_probe,
 };
-static int __init gpio_mxc_init(void)
+static int __init gpio_bcm_init(void)
 {
         DPRINTF("RPI3 GPIO driver\n");
-	return vmm_devdrv_register_driver(&mxc_gpio_driver);
+	return vmm_devdrv_register_driver(&bcm_gpio_driver);
 }
 VMM_DECLARE_MODULE("Rasberry Pi 3 GPIO driver",
 		   "Vincent Bonnevalle",
 		   "GPL",
 		   1,
-		   gpio_mxc_init,
+		   gpio_bcm_init,
 		   NULL);
 #if 0
 MODULE_DEVICE_TABLE(of, bcm2835_pinctrl_match);

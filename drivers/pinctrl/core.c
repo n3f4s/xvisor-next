@@ -221,7 +221,6 @@ static void pinctrl_free_pindescs(struct pinctrl_dev *pctldev,
                                 kfree((void *)pindesc->name);
                         kfree(pindesc);
 		}
-                // XXX TODO FIXME is it a bug ?
                 // if kfree(0) = error
                 // then since pindesc can be null, kfree should be in the if
                 // else kfree(0) crash and kfree is bugged
