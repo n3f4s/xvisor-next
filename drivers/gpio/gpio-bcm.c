@@ -50,7 +50,8 @@
 #include <vmm_host_irqdomain.h>
 
 // undef DEBUG to suppress debug output
-#define DEBUG
+/*#define DEBUG*/
+#undef DEBUG
 
 #ifdef DEBUG
 #define DPRINTF(fmt, ...)  vmm_printf("\t[%s] " fmt, __PRETTY_FUNCTION__, ##__VA_ARGS__)
@@ -134,6 +135,7 @@ struct bcm2835_pinctrl {
 	struct pinctrl_gpio_range gpio_range;
 
 	struct bcm2835_gpio_irqdata irq_data[BCM2835_NUM_IRQS];
+        struct gpio_desc* gpio_desc[BCM2835_NUM_IRQS];
 	spinlock_t irq_lock[BCM2835_NUM_BANKS];
 };
 
@@ -421,9 +423,9 @@ static int bcm2835_gpio_to_irq(struct gpio_chip *gc, unsigned offset)
  * @chip: the gpiochip owning the GPIO
  * @offset: the offset of the GPIO to request for GPIO function
  */
+/*Copied from raspbian gpiolib*/
 int gpiochip_generic_request(struct gpio_chip *chip, unsigned offset)
 {
-        // Copied from raspbian gpiolib
 	return pinctrl_request_gpio(chip->base + offset);
 }
 /**
@@ -431,9 +433,13 @@ int gpiochip_generic_request(struct gpio_chip *chip, unsigned offset)
  * @chip: the gpiochip to request the gpio function for
  * @offset: the offset of the GPIO to free from GPIO function
  */
+/*Copied from raspbian gpiolib*/
 void gpiochip_generic_free(struct gpio_chip *chip, unsigned offset)
 {
-        // Copied from raspbian gpiolib
+	struct bcm2835_pinctrl *port =
+			container_of(chip, struct bcm2835_pinctrl, gpio_chip);
+        BUG_ON(offset >= BCM2835_NUM_GPIOS);
+        gpiochip_free_own_desc(port->gpio_desc[offset]);
 	pinctrl_free_gpio(chip->base + offset);
 }
 
@@ -453,15 +459,15 @@ static struct gpio_chip bcm2835_gpio_chip = {
 	.can_sleep = false,
 };
 
+/* FIXME check if it's the right way to implement
+ * this function*/
 static int bcm2835_gpio_irq_handle_bank(struct bcm2835_pinctrl *pc,
 					unsigned int bank, u32 mask)
 {
-    NOT_IMPLEMENTED;
-#if 0
 	unsigned long events;
 	unsigned offset;
 	unsigned gpio;
-	unsigned int type;
+        unsigned int type;
 
 	events = bcm2835_gpio_rd(pc, GPEDS0 + bank * 4);
 	events &= mask;
@@ -469,13 +475,15 @@ static int bcm2835_gpio_irq_handle_bank(struct bcm2835_pinctrl *pc,
 	for_each_set_bit(offset, &events, 32) {
 		gpio = (32 * bank) + offset;
 		type = pc->irq_type[gpio];
+                struct vmm_host_irq *irq = vmm_host_irq_get(vmm_host_irqdomain_find_mapping(pc->irq_domain, gpio));
+                if (NULL == irq)
+                        return VMM_EFAIL;
 
-		generic_handle_irq(irq_linear_revmap(pc->irq_domain, gpio));
+                irq->handler(irq, vmm_smp_processor_id(), irq->handler_data);
+		/*generic_handle_irq(vmm_host_irqdomain_find_mapping(pc->irq_domain, gpio)); // doesn't exists in Xvisor*/
 	}
 
 	return (events != 0);
-#endif
-        return 0;
 }
 
 static irqreturn_t bcm2835_gpio_irq_handler(int irq, void *dev_id)
@@ -571,7 +579,6 @@ static void bcm2835_gpio_irq_disable(struct irq_data *data)
 	spin_unlock_irqrestore(&pc->irq_lock[bank], flags);
 }
 
-#if 0 // unused, so commented out to suppress warnings
 static int __bcm2835_gpio_irq_set_type_disabled(struct bcm2835_pinctrl *pc,
 	unsigned offset, unsigned int type)
 {
@@ -590,9 +597,7 @@ static int __bcm2835_gpio_irq_set_type_disabled(struct bcm2835_pinctrl *pc,
 	}
 	return 0;
 }
-#endif
 
-#if 0 // unused, so commented out to suppress warnings
 /* slower path for reconfiguring IRQ type */
 static int __bcm2835_gpio_irq_set_type_enabled(struct bcm2835_pinctrl *pc,
 	unsigned offset, unsigned int type)
@@ -663,12 +668,12 @@ static int __bcm2835_gpio_irq_set_type_enabled(struct bcm2835_pinctrl *pc,
 	}
 	return 0;
 }
-#endif
 
+/* FIXME Test if this is the right implementation
+ * FIXME Set the handler depending on type value
+ */
 static int bcm2835_gpio_irq_set_type(struct irq_data *data, unsigned int type)
 {
-        NOT_IMPLEMENTED;
-#if 0
 	struct bcm2835_pinctrl *pc = irq_data_get_irq_chip_data(data);
 	unsigned gpio = irqd_to_hwirq(data);
 	unsigned offset = GPIO_REG_SHIFT(gpio);
@@ -683,16 +688,16 @@ static int bcm2835_gpio_irq_set_type(struct irq_data *data, unsigned int type)
 	else
 		ret = __bcm2835_gpio_irq_set_type_disabled(pc, gpio, type);
 
-	if (type & IRQ_TYPE_EDGE_BOTH)
-		irq_set_handler_locked(data, handle_edge_irq);
-	else
-		irq_set_handler_locked(data, handle_level_irq);
+	/*if (type & IRQ_TYPE_EDGE_BOTH)*/
+		/*irq_set_handler_locked(data, handle_edge_irq);*/
+	/*else*/
+		/*irq_set_handler_locked(data, handle_level_irq);*/
+        int irq = irq_create_mapping(pc->irq_domain, gpio);
+        vmm_host_irq_set_handler(irq, vmm_handle_level_irq);
 
 	spin_unlock_irqrestore(&pc->irq_lock[bank], flags);
 
 	return ret;
-#endif
-        return 0;
 }
 
 static void bcm2835_gpio_irq_ack(struct irq_data *data)
@@ -1088,54 +1093,39 @@ static struct pinctrl_gpio_range bcm2835_pinctrl_gpio_range = {
 	.npins = BCM2835_NUM_GPIOS,
 };
 
-#include "gpiolib.h"
-static void bcm2835_dbg_show(struct seq_file *s, struct gpio_chip *chip)
-{
-	unsigned		i;
-	unsigned		gpio = chip->base;
-	struct gpio_desc	*gdesc = &chip->desc[0];
-	int			is_out;
-	int			is_irq;
-
-        DPRINTF("Dumping %d gpios for %s (%s)\n", chip->ngpio, chip->label, gdesc->label);
-	for (i = 0; i < chip->ngpio; i++, gpio++, gdesc++) {
-
-                /*DPRINTF("GPIO %d has flag REQUESTED\n", i);*/
-
-		gpiod_get_direction(gdesc);
-		is_out = test_bit(FLAG_IS_OUT, &gdesc->flags);
-		is_irq = test_bit(FLAG_USED_AS_IRQ, &gdesc->flags);
-		seq_printf(s, " gpio-%-4d (%-20s) %s %-4s %s irq_no=%i, flags=0x%lx",
-			gpio, gdesc->label,
-			is_out ? "out" : "in ",
-			chip->get
-				? (chip->get(chip, i) ? "high" : "low")
-				: "?  ",
-			is_irq ? "IRQ" : "   ",
-			gpiod_to_irq(gdesc),
-			gdesc->flags
-			);
-		seq_printf(s, "\n");
-	}
-}
-
+/** Called by the module management part of Xvsior (during the driver registration)
+ *  Init the gpio driver and the gpio_chip that will be used to
+ *  communicate with the gpios
+ *
+ *  Init:
+ *      - Register
+ *      - Interrupt
+ *      - Callback of gpio_chip (free, get_direction, ...) (cf bcm2835_gpio_chip)
+ *      - Values of gpio_chip (base, ...) (cf bcm2835_gpio_chip)
+ *
+ *  @param dev   device on which the gpios are
+ *  @param devid device tree node containing gpio's info
+ */
 static int bcm2835_gpio_probe(struct vmm_device *dev,
                               const struct vmm_devtree_nodeid *devid)
 {
 	struct device_node *np = dev->of_node;
 	struct bcm2835_pinctrl *pc;
-	/*struct resource iomem;*/
+#if 0
+        struct resource iomem;
+#endif
 	int err, i;
 	BUG_ON(ARRAY_SIZE(bcm2835_gpio_pins) != BCM2835_NUM_GPIOS);
 	BUG_ON(ARRAY_SIZE(bcm2835_gpio_groups) != BCM2835_NUM_GPIOS);
 
         DPRINTF("Initialising bcm2835_pinctrl\n");
-        /* Init pc */
+        /* Init the pinctrl struct used internally */
 	pc = devm_kzalloc(dev, sizeof(*pc), GFP_KERNEL);
 	if (!pc)
 		return -ENOMEM;
 
         DPRINTF("Calling dev_set_drvdata(dev<%s>, pc)\n", dev->name);
+        /* Update the driver so that it will have a pointer to the gpio_chip struct */
 	dev_set_drvdata(dev, pc);
 	pc->dev = dev;
 
@@ -1160,6 +1150,7 @@ static int bcm2835_gpio_probe(struct vmm_device *dev,
 		return PTR_ERR(pc->base);
 #endif
 
+        /* Init the gpio_chip with the required function/values */
 	pc->gpio_chip = bcm2835_gpio_chip;
 	pc->gpio_chip.parent = dev;
 	pc->gpio_chip.of_node = np;
@@ -1172,6 +1163,7 @@ static int bcm2835_gpio_probe(struct vmm_device *dev,
 		return -ENOMEM;
 	}
 
+        /* Maps the irq on the gpios */
 	for (i = 0; i < BCM2835_NUM_GPIOS; i++) {
                 // FIXME : stuff from raspbian driver should work : find why it doesn't
 		int irq = irq_create_mapping(pc->irq_domain, i);
@@ -1209,6 +1201,7 @@ static int bcm2835_gpio_probe(struct vmm_device *dev,
 		spin_lock_init(&pc->irq_lock[i]);
 	}
 
+        /* Request irq for the gpios */
 	for (i = 0; i < BCM2835_NUM_IRQS; i++) {
 		int len;
 		char *name;
@@ -1235,14 +1228,19 @@ static int bcm2835_gpio_probe(struct vmm_device *dev,
 			return err;
 		}
 	}
+        /* Add the gpio chip to list of gpio chips */
 	err = gpiochip_add(&pc->gpio_chip);
 	if (err) {
 		dev_err(dev, "could not add GPIO chip\n");
 		return err;
 	}
-        pc->gpio_chip.dbg_show = bcm2835_dbg_show;
+        /* Set up the callback for `gpio list` command
+         * This is required (for now) because the default function
+         * check a flag that is not set (it may mean that there is something missing)
+         */
 
         DPRINTF("Calling pinctrl_register with %d pins\n", bcm2835_pinctrl_desc.npins);
+        /* Register the pins */
 	pc->pctl_dev = pinctrl_register(&bcm2835_pinctrl_desc, dev, pc);
         DPRINTF("pc->pctl_dev=%p\n", pc->pctl_dev);
 	if (IS_ERR(pc->pctl_dev)) {
@@ -1251,12 +1249,23 @@ static int bcm2835_gpio_probe(struct vmm_device *dev,
 	}
 
         DPRINTF("Setting gpio_range\n");
+        /* Set the gpio range */
 	pc->gpio_range = bcm2835_pinctrl_gpio_range;
         pc->gpio_range.base = pc->gpio_chip.base;
 	pc->gpio_range.gc = &pc->gpio_chip;
         DPRINTF("Adding gpio_range (&gpio_range=%p, pctl_dev=%p)\n", &pc->gpio_range, pc->pctl_dev);
 	pinctrl_add_gpio_range(pc->pctl_dev, &pc->gpio_range);
 
+        /* Request the gpio so FLAG_REQUESTED is set and the label is not null */
+	for (i = 0; i < BCM2835_NUM_GPIOS; i++) {
+                // TODO : Make sure there is no leak
+                struct gpio_desc *desc = gpiochip_request_own_desc(&pc->gpio_chip, i, MODULE_NAME);
+                if(IS_ERR(desc)) {
+                    DPRINTF("gpio_request for gpio %d returned an error\n", i);
+                    return ERR_PTR(desc);
+                }
+                pc->gpio_desc[i] = desc;
+        }
         DPRINTF("Everything went well !\n");
 	return VMM_OK;
 out_regmap:
