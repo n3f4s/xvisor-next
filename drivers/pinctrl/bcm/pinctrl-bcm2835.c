@@ -134,7 +134,6 @@ struct bcm2835_pinctrl {
 	struct pinctrl_gpio_range gpio_range;
 
 	struct bcm2835_gpio_irqdata irq_data[BCM2835_NUM_IRQS];
-	struct gpio_desc* gpio_desc[BCM2835_NUM_IRQS];
 	spinlock_t irq_lock[BCM2835_NUM_BANKS];
 };
 
@@ -435,10 +434,7 @@ int gpiochip_generic_request(struct gpio_chip *chip, unsigned offset)
 /*Copied from raspbian gpiolib*/
 void gpiochip_generic_free(struct gpio_chip *chip, unsigned offset)
 {
-	struct bcm2835_pinctrl *port =
-			container_of(chip, struct bcm2835_pinctrl, gpio_chip);
 	BUG_ON(offset >= BCM2835_NUM_GPIOS);
-	gpiochip_free_own_desc(port->gpio_desc[offset]);
 	pinctrl_free_gpio(chip->base + offset);
 }
 
